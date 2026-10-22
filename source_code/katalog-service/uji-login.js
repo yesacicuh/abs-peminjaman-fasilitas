@@ -1,4 +1,4 @@
-fetch('http://localhost:3001/auth/login', {
+fetch('http://localhost:3005/api/v1/auth/login', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ username: "mhs_satu", password: "123456" })
