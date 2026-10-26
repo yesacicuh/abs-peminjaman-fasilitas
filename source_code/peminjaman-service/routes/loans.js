@@ -26,7 +26,7 @@ router.post('/', authenticateToken, async (req, res) => {
             return res.status(400).json({ error: "Waktu selesai harus setelah waktu mulai." });
         }
 
-        // Panggil Layanan Katalog (Port 3001)
+        // Panggil Layanan Katalog
         const authHeader = req.headers.authorization;
         const katalogUrl = process.env.KATALOG_BASE_URL;
         
@@ -77,3 +77,24 @@ router.post('/', authenticateToken, async (req, res) => {
 });
 
 module.exports = router;
+
+// GET /api/v1/loans
+router.get('/', authenticateToken, (req, res) => {
+    try {
+        const database = db.read();
+        const role = req.user.role;
+        const userId = req.user.id;
+
+        let userLoans = database.loans;
+
+        if (role === 'mahasiswa') {
+            userLoans = userLoans.filter(loan => loan.borrower_id === userId);
+        }
+
+        return res.status(200).json({ data: userLoans });
+
+    } catch (error) {
+        console.error(error);
+        return res.status(500).json({ error: "Kesalahan server internal." });
+    }
+});
