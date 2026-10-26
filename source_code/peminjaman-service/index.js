@@ -10,5 +10,5 @@ app.use('/api/v1/loans', loansRouter);
 
 const PORT = process.env.PORT || 3002;
 app.listen(PORT, () => {
-    console.lang(`Layanan Peminjaman berjalan di http://localhost:${PORT}`);
+    console.log(`Layanan Peminjaman berjalan di http://localhost:${PORT}`);
 });

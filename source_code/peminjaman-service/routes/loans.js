@@ -1,18 +1,16 @@
 const express = require('express');
 const router = express.Router();
-// Asumsi Yedida menyiapkan middleware auth dan file koneksi db
 const { authenticateToken } = require('../middlewares/auth'); 
 const db = require('../db'); 
 
 // POST /api/v1/loans
 router.post('/', authenticateToken, async (req, res) => {
     try {
-        // Ambil borrower_id dari token, bukan dari body
         const borrower_id = req.user.id; 
         const role = req.user.role;
 
         if (role !== 'mahasiswa') {
-            return res.status(403).json({ error: "Hanya mahasiswa yang dapat mengajukan peminjaman." });
+            return res.status(403).json({ error: "Hanya mahasiswa yang dapat mengajukan." });
         }
 
         const { facility_id, start_at, end_at, purpose } = req.body;
@@ -21,52 +19,60 @@ router.post('/', authenticateToken, async (req, res) => {
             return res.status(400).json({ error: "Semua field wajib diisi." });
         }
 
-        if (new Date(end_at) <= new Date(start_at)) {
+        const startDate = new Date(start_at);
+        const endDate = new Date(end_at);
+
+        if (endDate <= startDate) {
             return res.status(400).json({ error: "Waktu selesai harus setelah waktu mulai." });
         }
 
-        // Panggil Layanan Katalog dengan meneruskan token
+        // Panggil Layanan Katalog (Port 3001)
         const authHeader = req.headers.authorization;
-        const katalogUrl = process.env.KATALOG_BASE_URL || 'http://localhost:3001/api/v1';
+        const katalogUrl = process.env.KATALOG_BASE_URL;
         
         const katalogResponse = await fetch(`${katalogUrl}/facilities/${facility_id}`, {
             method: 'GET',
             headers: { 'Authorization': authHeader }
         });
 
-        if (katalogResponse.status === 404) return res.status(404).json({ error: "Fasilitas tidak ditemukan." });
-        if (!katalogResponse.ok) return res.status(katalogResponse.status).json({ error: "Gagal memverifikasi fasilitas." });
+        if (katalogResponse.status === 404) return res.status(404).json({ error: "Fasilitas tidak ditemukan di Katalog." });
+        if (!katalogResponse.ok) return res.status(katalogResponse.status).json({ error: "Gagal terhubung ke Layanan Katalog." });
 
         const facilityData = await katalogResponse.json();
-        if (!facilityData.is_active) return res.status(409).json({ error: "Fasilitas tidak aktif." });
+        
+        if (!facilityData.is_active) {
+            return res.status(409).json({ error: "Fasilitas tidak aktif." });
+        }
 
-        // Cek bentrok jadwal (overlap)
-        const overlapQuery = `
-            SELECT id FROM loans 
-            WHERE facility_id = ? AND status IN ('pending', 'approved')
-            AND start_at < ? AND end_at > ?
-        `;
-        const existingOverlap = db.prepare(overlapQuery).get(facility_id, end_at, start_at);
+        // Cek Bentrok Jadwal (Data Array JSON)
+        const database = db.read();
+        const isOverlap = database.loans.some(loan => {
+            const isSameFacility = loan.facility_id === facility_id;
+            const isActiveLoan = ['pending', 'approved'].includes(loan.status);
+            // Logika overlap: start_baru < end_lama && end_baru > start_lama
+            const isTimeOverlap = (startDate < new Date(loan.end_at)) && (endDate > new Date(loan.start_at));
+            
+            return isSameFacility && isActiveLoan && isTimeOverlap;
+        });
 
-        if (existingOverlap) {
+        if (isOverlap) {
             return res.status(409).json({ error: "Jadwal bertumpang tindih." });
         }
 
-        // Simpan pengajuan
-        const insertQuery = `
-            INSERT INTO loans (facility_id, borrower_id, start_at, end_at, purpose, status) 
-            VALUES (?, ?, ?, ?, ?, 'pending')
-        `;
-        const result = db.prepare(insertQuery).run(facility_id, borrower_id, start_at, end_at, purpose);
+        // Simpan Pengajuan Baru
+        const newId = database.loans.length > 0 ? database.loans[database.loans.length - 1].id + 1 : 1;
+        const newLoan = {
+            id: newId, facility_id, borrower_id, start_at, end_at, purpose, status: 'pending'
+        };
 
-        return res.status(201).json({
-            message: "Pengajuan berhasil",
-            data: { id: result.lastInsertRowid, facility_id, borrower_id, start_at, end_at, purpose, status: 'pending' }
-        });
+        database.loans.push(newLoan);
+        db.write(database);
+
+        return res.status(201).json({ message: "Pengajuan berhasil", data: newLoan });
 
     } catch (error) {
         console.error(error);
-        return res.status(500).json({ error: "Terjadi kesalahan server." });
+        return res.status(500).json({ error: "Kesalahan server internal." });
     }
 });
 
