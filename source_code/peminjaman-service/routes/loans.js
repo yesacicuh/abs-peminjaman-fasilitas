@@ -76,9 +76,7 @@ router.post('/', authenticateToken, async (req, res) => {
     }
 });
 
-module.exports = router;
-
-// GET /api/v1/loans
+// GET Daftar Pengajuan
 router.get('/', authenticateToken, (req, res) => {
     try {
         const database = db.read();
@@ -98,3 +96,71 @@ router.get('/', authenticateToken, (req, res) => {
         return res.status(500).json({ error: "Kesalahan server internal." });
     }
 });
+
+// GET Detail Pengajuan
+router.get('/:id', authenticateToken, (req, res) => {
+    try {
+        const database = db.read();
+        const role = req.user.role;
+        const userId = req.user.id;
+        const loanId = parseInt(req.params.id);
+
+        const loan = database.loans.find(l => l.id === loanId);
+        if (!loan) {
+            return res.status(404).json({ error: "Pengajuan tidak ditemukan." }); 
+        }
+
+        if (role !== 'admin' && loan.borrower_id !== userId) {
+            return res.status(403).json({ error: "Akses terlarang. Anda bukan pemilik pengajuan ini." }); 
+        }
+
+        return res.status(200).json({ data: loan });
+
+    } catch (error) {
+        console.error(error);
+        return res.status(500).json({ error: "Kesalahan server internal." });
+    }
+});
+
+// PATCH Ubah Status Pengajuan
+router.patch('/:id', authenticateToken, (req, res) => {
+    try {
+        const database = db.read();
+        const role = req.user.role;
+        const loanId = parseInt(req.params.id);
+        const { status } = req.body;
+
+        if (role !== 'admin') {
+            return res.status(403).json({ error: "Akses terlarang. Hanya admin yang dapat memproses pengajuan." }); 
+        }
+
+        if (status !== 'approved' && status !== 'rejected') {
+            return res.status(400).json({ error: "Status tidak valid. Gunakan 'approved' atau 'rejected'." }); 
+        }
+
+        const loanIndex = database.loans.findIndex(l => l.id === loanId);
+        if (loanIndex === -1) {
+            return res.status(404).json({ error: "Pengajuan tidak ditemukan." });
+        }
+
+        const loan = database.loans[loanIndex];
+
+        if (loan.status !== 'pending') {
+            return res.status(409).json({ error: "Transisi tidak sah. Pengajuan sudah diproses sebelumnya." }); 
+        }
+
+        database.loans[loanIndex].status = status;
+        db.write(database);
+
+        return res.status(200).json({ 
+            message: `Pengajuan berhasil diubah menjadi ${status}`, 
+            data: database.loans[loanIndex] 
+        }); 
+
+    } catch (error) {
+        console.error(error);
+        return res.status(500).json({ error: "Kesalahan server internal." });
+    }
+});
+
+module.exports = router;
