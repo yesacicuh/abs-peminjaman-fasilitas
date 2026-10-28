@@ -35,6 +35,12 @@ router.post('/', authenticateToken, async (req, res) => {
             headers: { 'Authorization': authHeader }
         });
 
+        console.log("\n[BUKTI 2.5] KOMUNIKASI ANTAR LAYANAN:");
+        console.log("- Memanggil Katalog :", katalogResponse.url);
+        console.log("- Token Di-forward  :", authHeader.substring(0, 30) + "..."); 
+        console.log("- Status Katalog    :", katalogResponse.status);
+        console.log("==========================================================\n");
+
         if (katalogResponse.status === 404) return res.status(404).json({ error: "Fasilitas tidak ditemukan di Katalog." });
         if (!katalogResponse.ok) return res.status(katalogResponse.status).json({ error: "Gagal terhubung ke Layanan Katalog." });
 
